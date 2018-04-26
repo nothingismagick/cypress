@@ -42,6 +42,7 @@ const descriptions = {
   group: 'flag to group individual runs by using common --group-id',
   groupId: 'optional common id to group runs by, extracted from CI environment variables by default',
   dev: 'runs cypress in development and bypasses binary check',
+  forceInstall: 'force install the Cypress binary',
 }
 
 const knownCommands = ['version', 'run', 'open', 'install', 'verify', '-v', '--version', 'help', '-h', '--help']
@@ -144,7 +145,7 @@ module.exports = {
     .command('install')
     .usage('[options]')
     .description('Installs the Cypress executable matching this package\'s version')
-    .option('-f, --force', 'force install the Cypress binary')
+    .option('-f, --force', text('forceInstall'))
     .action((opts) => {
       require('./tasks/install')
       .start(parseOpts(opts))
