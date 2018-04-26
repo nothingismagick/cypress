@@ -2,7 +2,7 @@ const util = require('../util')
 const state = require('../tasks/state')
 
 const getVersions = () => {
-  return state.getInstalledVersion()
+  return state.getInstalledVersionAsync()
   .then((binary) => {
     return {
       package: util.pkgVersion(),

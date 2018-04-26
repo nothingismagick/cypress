@@ -7,13 +7,12 @@ const snapshot = require('snap-shot-it')
 const fs = require(`${lib}/fs`)
 const util = require(`${lib}/util`)
 const logger = require(`${lib}/logger`)
-const info = require(`${lib}/tasks/info`)
 const unzip = require(`${lib}/tasks/unzip`)
 
 const stdout = require('../../support/stdout')
 const normalize = require('../../support/normalize')
 
-const dest = info.getInstallationDir()
+const installationDir = path.join(os.tmpDir(), 'Cypress', '1.2.3')
 
 describe('unzip', function () {
   require('mocha-banner').register()
@@ -23,12 +22,14 @@ describe('unzip', function () {
     this.sandbox.stub(os, 'platform').returns('darwin')
     this.sandbox.stub(os, 'release').returns('test release')
     this.sandbox.stub(util, 'pkgVersion').returns('1.2.3')
+
+    return
   })
 
   afterEach(function () {
     stdout.restore()
 
-    return fs.removeAsync(dest)
+    return fs.removeAsync(installationDir)
   })
 
   it('throws when cannot unzip', function () {
@@ -36,8 +37,9 @@ describe('unzip', function () {
 
     return unzip
     .start({
-      downloadDestination: path.join('test', 'fixture', 'bad_example.zip'),
+      installationDir,
       zipDestination: '/foo/bar/baz',
+      downloadDestination: path.join('test', 'fixture', 'bad_example.zip'),
     })
     .then(() => {
       throw new Error('should have failed')
@@ -52,10 +54,11 @@ describe('unzip', function () {
   it('can really unzip', function () {
     return unzip
     .start({
+      installationDir,
       downloadDestination: path.join('test', 'fixture', 'example.zip'),
     })
     .then(() => {
-      return fs.statAsync(dest)
+      return fs.statAsync(installationDir)
     })
   })
 })

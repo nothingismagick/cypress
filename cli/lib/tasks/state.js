@@ -19,16 +19,27 @@ const getPlatformExecutable = () => {
   }
 }
 
+const getBinaryPkgPath = () => {
+  const platform = os.platform()
+  switch (platform) {
+    case 'darwin': return path.join('Cypress.app', 'Contents', 'Resources', 'app', 'package.json')
+    case 'linux': return path.join('Cypress', 'resources', 'app', 'package.json')
+    case 'win32': return path.join('Cypress', 'resources', 'app', 'package.json')
+      // TODO handle this error using our standard
+    default: throw new Error(`Platform: "${platform}" is not supported.`)
+  }
+}
+
 /**
  * Get path to binary directory
  * @async
  * @param {string} version
  * @returns {Promise}
  */
-const getBinaryDirectory = (version = util.pkgVersion()) => {
-  return getCliStateContents()
+const getBinaryDirectoryAsync = (version = util.pkgVersion()) => {
+  return getCliStateContentsAsync()
   .tap(debug)
-  .get('install_directory')
+  .get('installDirectory')
   .then((installDir) => {
     if (installDir) return installDir
 
@@ -48,12 +59,12 @@ const getDistDirectory = () => {
 }
 
 const getBinaryStatePath = () => {
-  return getBinaryDirectory()
+  return getBinaryDirectoryAsync()
   .then((binaryDir) => path.join(binaryDir, 'binary_state.json'))
   .tap((binaryStatePath) => debug('path to binary_state.json file %s', binaryStatePath))
 }
 
-const getBinaryStateContents = () => {
+const getBinaryStateContentsAsync = () => {
   return getBinaryStatePath()
   .then(fs.readJsonAsync)
   .catch({ code: 'ENOENT' }, SyntaxError, () => {
@@ -62,13 +73,13 @@ const getBinaryStateContents = () => {
   })
 }
 
-const getCliStatePath = () => {
+const getCliStatePathAsync = () => {
   return Promise.resolve(path.join(getDistDirectory(), 'cli_state.json'))
   .tap((path) => debug('path to cli_state.json file %s', path))
 }
 
-const getCliStateContents = () => {
-  return getCliStatePath()
+const getCliStateContentsAsync = () => {
+  return getCliStatePathAsync()
   .then(fs.readJsonAsync)
   .catch({ code: 'ENOENT' }, SyntaxError, () => {
     debug('could not read cli_state.json file')
@@ -76,75 +87,82 @@ const getCliStateContents = () => {
   })
 }
 
-const getInstalledVersion = () => {
-  return getCliStateContents()
+const getInstalledVersionAsync = () => {
+  return getCliStateContentsAsync()
   .tap(debug)
   .get('version')
   .catchReturn(null)
 }
 
-const getBinaryVerified = () => {
-  return getBinaryStateContents()
+const getBinaryVerifiedAsync = () => {
+  return getBinaryStateContentsAsync()
   .tap(debug)
   .get('verified')
 }
 
-const ensureBinaryDirectory = () => {
-  return getBinaryDirectory()
+const ensureBinaryDirectoryAsync = () => {
+  return getBinaryDirectoryAsync()
   .then(fs.ensureDirAsync)
 }
 
-const clearCliState = () => {
-  return getCliStatePath()
+const clearCliStateAsync = () => {
+  return getCliStatePathAsync()
   .tap((path) => debug('removing cli_state.json at', path))
   .then(fs.removeAsync)
 }
 
-const clearBinaryState = () => {
-  return getBinaryDirectory()
+const clearBinaryStateAsync = () => {
+  return getBinaryDirectoryAsync()
   .then(fs.removeAsync)
 }
 
-const writeInstalledVersion = (version) => {
-  return getCliStateContents()
+const writeInstalledVersionAsync = (version) => {
+  return getCliStateContentsAsync()
   .then((contents) => {
-    return writeCliState(_.extend(contents, { version }))
+    return writeCliStateAsync(_.extend(contents, { version }))
   })
 }
 
-const writeInstallDirectory = (install_directory) => {
-  return getCliStateContents()
+const writeInstallDirectoryAsync = (installDirectory) => {
+  return getCliStateContentsAsync()
   .then((contents) => {
-    return writeCliState(_.extend(contents, { install_directory }))
+    return writeCliStateAsync(_.extend(contents, { installDirectory }))
   })
 }
 
 /**
  * @param {boolean} verified
  */
-const writeVerified = (verified) => {
-  return getBinaryStateContents()
+const writeVerifiedAsync = (verified) => {
+  return getBinaryStateContentsAsync()
   .then((contents) => {
-    return writeBinaryState(_.extend(contents, { verified }))
+    return writeBinaryStateAsync(_.extend(contents, { verified }))
   })
 }
 
-const getPathToExecutable = (binary_directory) => {
-  return path.join(binary_directory, getPlatformExecutable())
+const getPathToExecutable = (binaryDir) => {
+  return path.join(binaryDir, getPlatformExecutable())
 }
 
-const getPathToExecutableDir = (binary_directory) => {
-  return path.join(binary_directory, getPlatformExecutable().split('/')[0])
+const getPathToExecutableDir = (binaryDir) => {
+  return path.join(binaryDir, getPlatformExecutable().split('/')[0])
 }
 
-const writeCliState = (contents) => {
-  return getCliStatePath()
+const getBinaryPkgVersionAsync = (binaryDir) => {
+  const pathToPackageJson = path.join(binaryDir, getBinaryPkgPath())
+
+  return fs.readJsonAsync(pathToPackageJson)
+  .get('version')
+}
+
+const writeCliStateAsync = (contents) => {
+  return getCliStatePathAsync()
   .tap((path) => debug('writing cli_state.json at', path))
   .then((path) => fs.outputJsonAsync(path, contents, {
     spaces: 2,
   }))
 }
-const writeBinaryState = (contents) => {
+const writeBinaryStateAsync = (contents) => {
   return getBinaryStatePath()
   .then((path) => fs.outputJsonAsync(path, contents, {
     spaces: 2,
@@ -153,21 +171,22 @@ const writeBinaryState = (contents) => {
 
 
 module.exports = {
-  getInstalledVersion,
-  getCliStateContents,
-  getCliStatePath,
   getDistDirectory,
-  writeCliState,
-  clearCliState,
-  getBinaryStateContents,
-  clearBinaryState,
-  writeBinaryState,
-  getBinaryVerified,
-  getBinaryDirectory,
-  ensureBinaryDirectory,
   getPathToExecutableDir,
   getPathToExecutable,
-  writeInstalledVersion,
-  writeInstallDirectory,
-  writeVerified,
+  getInstalledVersionAsync,
+  getCliStateContentsAsync,
+  getCliStatePathAsync,
+  getBinaryStateContentsAsync,
+  getBinaryVerifiedAsync,
+  getBinaryDirectoryAsync,
+  getBinaryPkgVersionAsync,
+  clearCliStateAsync,
+  clearBinaryStateAsync,
+  writeCliStateAsync,
+  writeBinaryStateAsync,
+  writeInstalledVersionAsync,
+  writeInstallDirectoryAsync,
+  writeVerifiedAsync,
+  ensureBinaryDirectoryAsync,
 }

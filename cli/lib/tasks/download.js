@@ -1,13 +1,14 @@
 const _ = require('lodash')
-const os = require('os')
-const path = require('path')
-const progress = require('request-progress')
-const Promise = require('bluebird')
-const request = require('request')
-const url = require('url')
-const debug = require('debug')('cypress:cli')
-const { stripIndent } = require('common-tags')
+const la = require('lazy-ass')
 const is = require('check-more-types')
+const os = require('os')
+const url = require('url')
+const path = require('path')
+const debug = require('debug')('cypress:cli')
+const request = require('request')
+const Promise = require('bluebird')
+const progress = require('request-progress')
+const { stripIndent } = require('common-tags')
 
 const { throwFormErrorText, errors } = require('../errors')
 const fs = require('../fs')
@@ -132,12 +133,17 @@ const download = (options) => {
 }
 
 const start = (options) => {
+  if (!options.downloadDestination) {
+    la(is.unemptyString(options.downloadDir), 'missing download dir', options)
+  }
+
   _.defaults(options, {
     version: null,
     throttle: 100,
     onProgress: () => {},
     downloadDestination: path.join(options.downloadDir, 'cypress.zip'),
   })
+
   debug(`downloading cypress.zip to "${options.downloadDestination}"`)
 
   // ensure download dir exists

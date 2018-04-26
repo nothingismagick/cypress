@@ -1,21 +1,24 @@
 require('../../spec_helper')
 
 const os = require('os')
-const nock = require('nock')
-const snapshot = require('snap-shot-it')
 const la = require('lazy-ass')
 const is = require('check-more-types')
+const path = require('path')
+const nock = require('nock')
+const snapshot = require('snap-shot-it')
 
 const fs = require(`${lib}/fs`)
 const logger = require(`${lib}/logger`)
 const util = require(`${lib}/util`)
-const info = require(`${lib}/tasks/info`)
+const state = require(`${lib}/tasks/state`)
 const download = require(`${lib}/tasks/download`)
 
 const stdout = require('../../support/stdout')
 const normalize = require('../../support/normalize')
 
-describe('download', function () {
+const downloadDir = path.join(os.tmpDir(), 'Cypress', 'download')
+
+describe('lib/tasks/download', function () {
   require('mocha-banner').register()
 
   const rootFolder = '/home/user/git'
@@ -25,7 +28,10 @@ describe('download', function () {
 
     this.stdout = stdout.capture()
 
-    this.options = { displayOpen: false }
+    this.options = {
+      downloadDir,
+      displayOpen: false,
+    }
 
     this.sandbox.stub(os, 'platform').returns('darwin')
     this.sandbox.stub(os, 'release').returns('test release')
@@ -63,6 +69,24 @@ describe('download', function () {
       const url = 'http://local.com'
       const result = download.getUrl(url)
       expect(result).to.equal(url)
+    })
+  })
+
+  it('saves example.zip to options.downloadDestination', function () {
+    nock('https://aws.amazon.com')
+    .get('/some.zip')
+    .reply(200, () => fs.createReadStream('test/fixture/example.zip'))
+
+    nock('https://download.cypress.io')
+    .get('/desktop')
+    .query(true)
+    .reply(302, undefined, {
+      Location: 'https://aws.amazon.com/some.zip',
+      'x-version': '0.11.1',
+    })
+
+    return download.start(this.options).then(() => {
+      return fs.statAsync(path.join(downloadDir, 'cypress.zip'))
     })
   })
 
@@ -113,7 +137,7 @@ describe('download', function () {
 
     // not really the download error, but the easiest way to
     // test the error handling
-    this.sandbox.stub(info, 'ensureInstallationDir').rejects(err)
+    this.sandbox.stub(state, 'ensureBinaryDirectoryAsync').rejects(err)
 
     return download
     .start(this.options)

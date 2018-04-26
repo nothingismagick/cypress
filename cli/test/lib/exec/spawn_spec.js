@@ -12,7 +12,7 @@ const util = require(`${lib}/util.js`)
 
 const cwd = process.cwd()
 
-describe('exec spawn', function () {
+describe('lib/exec/spawn', function () {
   beforeEach(function () {
     this.sandbox.stub(process, 'exit')
     this.spawnedProcess = this.sandbox.stub({

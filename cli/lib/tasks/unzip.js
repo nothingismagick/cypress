@@ -1,4 +1,6 @@
 const _ = require('lodash')
+const la = require('lazy-ass')
+const is = require('check-more-types')
 const cp = require('child_process')
 const os = require('os')
 const yauzl = require('yauzl')
@@ -17,7 +19,7 @@ const unzip = (options = {}) => {
   _.defaults(options, {
     downloadedFilename: null,
     onProgress: () => {},
-    // installationDir: state.getBinaryDirectory(),
+    // installationDir: state.getBinaryDirectoryAsync(),
   })
 
   const { downloadDestination, installationDir } = options
@@ -127,6 +129,8 @@ const unzip = (options = {}) => {
 }
 
 const start = (options = {}) => {
+  la(is.unemptyString(options.installationDir), 'missing installationDir', options)
+
   const dir = state.getPathToExecutableDir(options.installationDir)
 
   debug('removing existing unzipped directory', dir)

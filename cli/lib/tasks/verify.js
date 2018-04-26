@@ -137,7 +137,7 @@ function testBinary (version, installPath) {
       title: util.titleize('Verifying Cypress can run', chalk.gray(dir)),
       task: (ctx, task) => {
         debug('clearing out the verified version')
-        return state.writeVerified(null)
+        return state.writeVerifiedAsync(null)
         .then(() => {
           return Promise.all([
             runSmokeTest(dir),
@@ -146,7 +146,7 @@ function testBinary (version, installPath) {
         })
         .then(() => {
           debug('write verified: true')
-          return state.writeVerified(true)
+          return state.writeVerifiedAsync(true)
         })
         .then(() => {
           util.setTaskTitle(
@@ -168,7 +168,7 @@ function testBinary (version, installPath) {
 }
 
 const maybeVerify = (installedVersion, installPath, options = {}) => {
-  return state.getBinaryVerified()
+  return state.getBinaryVerifiedAsync()
   .then((isVerified) => {
 
     debug('is Verified ?', isVerified)
@@ -202,19 +202,18 @@ const start = (options = {}) => {
     welcomeMessage: true,
   })
 
-  return state.getCliStateContents()
-  .then(({ install_directory, version }) => {
+  return state.getCliStateContentsAsync()
+  .then(({ installDir, version }) => {
     const installedVersion = version
-    const installPath = install_directory
 
     debug('installed version is', installedVersion, 'comparing to', packageVersion)
 
     // figure out where this executable is supposed to be at
-    const executable = state.getPathToExecutable(installPath)
+    const executable = state.getPathToExecutable(installDir)
     return checkIfNotInstalledOrMissingExecutable(installedVersion, executable)
-    .return({ installedVersion, installPath })
+    .return({ installedVersion, installDir })
   })
-  .then(({ installedVersion, installPath }) => {
+  .then(({ installedVersion, installDir }) => {
     if (installedVersion !== packageVersion) {
       // warn if we installed with CYPRESS_BINARY_VERSION or changed version
       // in the package.json
@@ -229,7 +228,7 @@ const start = (options = {}) => {
       logger.log()
     }
 
-    return maybeVerify(installedVersion, installPath, options)
+    return maybeVerify(installedVersion, installDir, options)
   })
   .catch((err) => {
     if (err.known) {

@@ -12,16 +12,15 @@ const state = require(`${lib}/tasks/state`)
 let installationDir // = state.getInstallationDir()
 let cliStatePath // = state.getInfoFilePath()
 
-describe('info', function () {
-
+describe('lib/tasks/state', function () {
   beforeEach(function () {
     logger.reset()
     this.sandbox.stub(process, 'exit')
 
-    return state.getCliStatePath()
+    return state.getCliStatePathAsync()
     .tap((path) => cliStatePath = path)
     .then(fs.removeAsync)
-    .then(() => state.getBinaryDirectory())
+    .then(() => state.getBinaryDirectoryAsync())
     .tap((binaryDir) => installationDir = binaryDir)
     .then(fs.removeAsync)
 
@@ -29,7 +28,7 @@ describe('info', function () {
     // this.ensureEmptyInstallationDir = () => {
     //   return fs.removeAsync(installationDir)
     //   .then(() => {
-    //     return state.ensureBinaryDirectory()
+    //     return state.ensureBinaryDirectoryAsync()
     //   })
     // }
   })
@@ -39,11 +38,11 @@ describe('info', function () {
     .then(fs.ensureDirAsync(installationDir))
   })
 
-  context('.clearCliState', function () {
+  context('.clearCliStateAsync', function () {
     it('wipes out version info in cli_state.json', function () {
       return fs.outputJsonAsync(cliStatePath, { version: '5', install_directory: '/path/to/binary' })
       .then(() => {
-        return state.clearCliState()
+        return state.clearCliStateAsync()
       })
       .then(() => {
         return fs.pathExistsAsync(cliStatePath)
@@ -72,15 +71,15 @@ describe('info', function () {
     })
   })
 
-  context('.getInstalledVersion', function () {
+  context('.getInstalledVersionAsync', function () {
     beforeEach(function () {
       return this.ensureEmptyInstallationDir()
     })
 
     it('resolves version from version file when it exists', function () {
-      return state.writeInstalledVersion('2.0.48')
+      return state.writeInstalledVersionAsync('2.0.48')
       .then(() => {
-        return state.getInstalledVersion()
+        return state.getInstalledVersionAsync()
       })
       .then((version) => {
         expect(version).to.equal('2.0.48')
@@ -88,7 +87,7 @@ describe('info', function () {
     })
 
     it('throws when version file does not exist', function () {
-      return state.getInstalledVersion()
+      return state.getInstalledVersionAsync()
       .catch(() => {})
     })
   })
@@ -122,13 +121,13 @@ describe('info', function () {
     })
   })
 
-  context('.writeInstalledVersion', function () {
+  context('.writeInstalledVersionAsync', function () {
     beforeEach(function () {
       return this.ensureEmptyInstallationDir()
     })
 
     it('writes the version to the version file', function () {
-      return state.writeInstalledVersion('the version')
+      return state.writeInstalledVersionAsync('the version')
       .then(() => {
         return fs.readJsonAsync(cliStatePath).get('version')
       })

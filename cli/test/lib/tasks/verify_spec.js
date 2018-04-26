@@ -4,6 +4,7 @@ const _ = require('lodash')
 const os = require('os')
 const cp = require('child_process')
 const EE = require('events').EventEmitter
+const path = require('path')
 const Promise = require('bluebird')
 const snapshot = require('snap-shot-it')
 const { stripIndent } = require('common-tags')
@@ -12,7 +13,7 @@ const fs = require(`${lib}/fs`)
 const util = require(`${lib}/util`)
 const logger = require(`${lib}/logger`)
 const xvfb = require(`${lib}/exec/xvfb`)
-const info = require(`${lib}/tasks/info`)
+const state = require(`${lib}/tasks/state`)
 const verify = require(`${lib}/tasks/verify`)
 
 const stdout = require('../../support/stdout')
@@ -21,7 +22,7 @@ const normalize = require('../../support/normalize')
 const packageVersion = '1.2.3'
 const executablePath = '/path/to/executable'
 const executableDir = '/path/to/executable/dir'
-const installationDir = info.getInstallationDir()
+const installationDir = path.join(os.tmpDir(), 'Cypress', '1.2.3')
 
 const LISTR_DELAY = 500 // for its animation
 
@@ -42,8 +43,16 @@ const slice = (str) => {
   return str.join('\n')
 }
 
-context('.verify', function () {
+const ensureEmptyInstallationDir = () => {
+  return fs.removeAsync(installationDir)
+  .then(() => {
+    return state.ensureBinaryDirectoryAsync()
+  })
+}
+
+context('lib/tasks/verify', function () {
   require('mocha-banner').register()
+
   beforeEach(function () {
     this.stdout = stdout.capture()
     this.cpstderr = new EE()
@@ -52,27 +61,22 @@ context('.verify', function () {
     this.sandbox.stub(util, 'pkgVersion').returns(packageVersion)
     this.sandbox.stub(os, 'platform').returns('darwin')
     this.sandbox.stub(os, 'release').returns('test release')
-    this.ensureEmptyInstallationDir = () => {
-      return fs.removeAsync(installationDir)
-      .then(() => {
-        return info.ensureInstallationDir()
-      })
-    }
     this.spawnedProcess = _.extend(new EE(), {
       unref: this.sandbox.stub(),
       stderr: this.cpstderr,
       stdout: this.cpstdout,
     })
     this.sandbox.stub(cp, 'spawn').returns(this.spawnedProcess)
-    this.sandbox.stub(info, 'getPathToExecutable').returns(executablePath)
-    this.sandbox.stub(info, 'getPathToUserExecutableDir').returns(executableDir)
+    this.sandbox.stub(state, 'getPathToExecutable').returns(executablePath)
+    this.sandbox.stub(state, 'getPathToExecutableDir').returns(executableDir)
     this.sandbox.stub(xvfb, 'start').resolves()
     this.sandbox.stub(xvfb, 'stop').resolves()
     this.sandbox.stub(xvfb, 'isNeeded').returns(false)
     this.sandbox.stub(Promise, 'delay').resolves()
     this.sandbox.stub(this.spawnedProcess, 'on')
     this.spawnedProcess.on.withArgs('close').yieldsAsync(0)
-    return this.ensureEmptyInstallationDir()
+
+    return ensureEmptyInstallationDir()
   })
 
   afterEach(function () {
@@ -82,7 +86,7 @@ context('.verify', function () {
   it('logs error and exits when no version of Cypress is installed', function () {
     const ctx = this
 
-    return info.writeInfoFileContents({})
+    return state.writeCliStateAsync({})
     .then(() => {
       return verify.start()
     })
@@ -105,7 +109,7 @@ context('.verify', function () {
     // make it think the executable exists
     this.sandbox.stub(fs, 'statAsync').resolves()
 
-    return info.writeInfoFileContents({
+    return state.writeCliStateAsync({
       version: packageVersion,
       verifiedVersion: packageVersion,
     })
@@ -130,9 +134,9 @@ context('.verify', function () {
     .resolves()
 
     // force this to throw to short circuit actually running smoke test
-    this.sandbox.stub(info, 'getVerifiedVersion').rejects(new Error)
+    this.sandbox.stub(state, 'getVerifiedVersion').rejects(new Error)
 
-    return info.writeInstalledVersion('bloop')
+    return state.writeInstalledVersionAsync('bloop')
     .then(() => {
       return verify.start()
     })
@@ -150,7 +154,7 @@ context('.verify', function () {
   it('logs error and exits when executable cannot be found', function () {
     const ctx = this
 
-    return info.writeInstalledVersion(packageVersion)
+    return state.writeInstalledVersionAsync(packageVersion)
     .then(() => {
       return verify.start()
     })
@@ -173,7 +177,7 @@ context('.verify', function () {
       this.sandbox.stub(_, 'random').returns('222')
       this.sandbox.stub(this.cpstdout, 'on').yieldsAsync('222')
 
-      return info.writeInfoFileContents({
+      return state.writeCliStateAsync({
         version: packageVersion,
         verifiedVersion: packageVersion,
       })
@@ -190,7 +194,7 @@ context('.verify', function () {
         ])
       })
       .then(() => {
-        return info.getVerifiedVersion()
+        return state.getVerifiedVersion()
       })
       .then((vv) => {
         expect(vv).to.eq(packageVersion)
@@ -222,7 +226,7 @@ context('.verify', function () {
           normalize(slice(ctx.stdout.toString()))
         )
 
-        return info.getVerifiedVersion()
+        return state.getVerifiedVersion()
       })
       .then((verifiedVersion) => {
         expect(verifiedVersion).to.be.null
@@ -246,14 +250,14 @@ context('.verify', function () {
     it('finds ping value in the verbose output', function () {
       const ctx = this
 
-      return info.writeInfoFileContents({
+      return state.writeCliStateAsync({
         version: packageVersion,
       })
       .then(() => {
         return verify.start()
       })
       .then(() => {
-        return info.getVerifiedVersion()
+        return state.getVerifiedVersion()
       })
       .then((vv) => {
         expect(vv).to.eq(packageVersion)
@@ -278,14 +282,14 @@ context('.verify', function () {
     it('logs and runs when no version has been verified', function () {
       const ctx = this
 
-      return info.writeInfoFileContents({
+      return state.writeCliStateAsync({
         version: packageVersion,
       })
       .then(() => {
         return verify.start()
       })
       .then(() => {
-        return info.getVerifiedVersion()
+        return state.getVerifiedVersion()
       })
       .then((vv) => {
         expect(vv).to.eq(packageVersion)
@@ -302,7 +306,7 @@ context('.verify', function () {
     it('logs and runs when current version has not been verified', function () {
       const ctx = this
 
-      return info.writeInfoFileContents({
+      return state.writeCliStateAsync({
         version: packageVersion,
         verifiedVersion: 'different version',
       })
@@ -310,7 +314,7 @@ context('.verify', function () {
         return verify.start()
       })
       .then(() => {
-        return info.getVerifiedVersion()
+        return state.getVerifiedVersion()
       })
       .then((vv) => {
         expect(vv).to.eq(packageVersion)
@@ -327,7 +331,7 @@ context('.verify', function () {
     it('logs and runs when installed version is different than verified version', function () {
       const ctx = this
 
-      return info.writeInfoFileContents({
+      return state.writeCliStateAsync({
         version: '9.8.7',
         verifiedVersion: packageVersion,
       })
@@ -335,7 +339,7 @@ context('.verify', function () {
         return verify.start()
       })
       .then(() => {
-        return info.getVerifiedVersion()
+        return state.getVerifiedVersion()
       })
       .then((vv) => {
         expect(vv).to.eq('9.8.7')
@@ -352,7 +356,7 @@ context('.verify', function () {
     it('turns off Opening Cypress...', function () {
       const ctx = this
 
-      return info.writeInfoFileContents({
+      return state.writeCliStateAsync({
         version: packageVersion,
         verifiedVersion: 'different version',
       })
@@ -374,7 +378,7 @@ context('.verify', function () {
       beforeEach(function () {
         xvfb.isNeeded.returns(true)
 
-        return info.writeInfoFileContents({
+        return state.writeCliStateAsync({
           version: packageVersion,
           verifiedVersion: 'different version',
         })
@@ -419,7 +423,7 @@ context('.verify', function () {
       beforeEach(function () {
         util.isCi.returns(true)
 
-        return info.writeInfoFileContents({
+        return state.writeCliStateAsync({
           version: packageVersion,
         })
         .then(() => {

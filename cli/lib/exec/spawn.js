@@ -44,9 +44,9 @@ module.exports = {
     })
 
     const spawn = () => {
-      return state.getBinaryDirectory()
+      return state.getBinaryDirectoryAsync()
       .then((binaryPath) => {
-        new Promise((resolve, reject) => {
+        return new Promise((resolve, reject) => {
           let cypressPath = state.getPathToExecutable(binaryPath)
 
           if (options.dev) {

@@ -1,19 +1,19 @@
 const _ = require('lodash')
+const la = require('lazy-ass')
+const is = require('check-more-types')
 const path = require('path')
 const chalk = require('chalk')
+const debug = require('debug')('cypress:cli')
 const Listr = require('listr')
 const verbose = require('@cypress/listr-verbose-renderer')
-const { stripIndent } = require('common-tags')
-const debug = require('debug')('cypress:cli')
 const Promise = require('bluebird')
+const { stripIndent } = require('common-tags')
 const fs = require('../fs')
 const download = require('./download')
 const util = require('../util')
 const state = require('./state')
 const unzip = require('./unzip')
 const logger = require('../logger')
-const la = require('lazy-ass')
-const is = require('check-more-types')
 
 const alreadyInstalledMsg = (installedVersion, needVersion) => {
   logger.log(chalk.yellow(stripIndent`
@@ -213,7 +213,7 @@ const start = (options = {}) => {
     }
   }
 
-  return state.getInstalledVersion()
+  return state.getInstalledVersionAsync()
   .then((installedVersion) => {
 
     if (!installedVersion) {
@@ -224,7 +224,7 @@ const start = (options = {}) => {
     debug('installed version is', installedVersion, 'version needed is', needVersion)
 
     if (options.force) {
-      return state.clearCliState()
+      return state.clearCliStateAsync()
       .thenReturn(true)
     }
 
@@ -254,31 +254,30 @@ const start = (options = {}) => {
     return fs.pathExistsAsync(needVersion)
     .then((exists) => {
       if (exists) {
-        debug('found local file right away', needVersion)
         return needVersion
       }
+
       const possibleFile = util.formAbsolutePath(needVersion)
       debug('checking local file', possibleFile, 'cwd', process.cwd())
-      return fs.pathExistsAsync(possibleFile).then((exists) => {
-        if (exists) {
-          debug('found local file', possibleFile)
-          debug('skipping download')
-          return possibleFile
-        } else {
-          // not a file path
-          return false
-        }
+
+      return fs.pathExistsAsync(possibleFile)
+      .then((exists) => {
+        // if this exists return the path to it
+        // else false
+        return exists ? possibleFile : false
       })
     })
-    .then((isLocalFile) => {
-      if (isLocalFile) {
-        debug('Found local file at', needVersion)
-        return state.writeInstallDirectory(isLocalFile)
-        .then(() => state.writeInstalledVersion(needVersion))
+    .then((pathToLocalFile) => {
+      if (pathToLocalFile) {
+        debug('found local file at', needVersion)
+        debug('skipping download')
+
+        return state.writeInstallDirectoryAsync(pathToLocalFile)
+        .then(() => state.writeInstalledVersionAsync(needVersion))
         .thenReturn(false)
       }
 
-      return state.getBinaryDirectory(needVersion)
+      return state.getBinaryDirectoryAsync(needVersion)
       .then((installationDir) => {
         return fs.pathExistsAsync(path.join(installationDir, 'binary_state.json'))
         .then((exists) => ({ installationDir, alreadyInstalled: exists }))
@@ -301,8 +300,8 @@ const start = (options = {}) => {
         .thenReturn(installationDir)
       })
       .then((installationDir) => {
-        return state.writeInstallDirectory(installationDir)
-        .then(() => state.writeInstalledVersion(needVersion))
+        return state.writeInstallDirectoryAsync(installationDir)
+        .then(() => state.writeInstalledVersionAsync(needVersion))
         // wait 1 second for a good user experience
         .thenReturn(Promise.delay(1000))
       })
