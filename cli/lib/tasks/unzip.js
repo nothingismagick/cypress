@@ -10,121 +10,124 @@ const readline = require('readline')
 const { throwFormErrorText, errors } = require('../errors')
 const fs = require('../fs')
 const util = require('../util')
-const info = require('./info')
+const state = require('./state')
 
 // expose this function for simple testing
 const unzip = (options = {}) => {
   _.defaults(options, {
-    downloadDestination: null,
+    downloadedFilename: null,
     onProgress: () => {},
-    zipDestination: info.getInstallationDir(),
+    // installationDir: state.getBinaryDirectory(),
   })
 
-  const { downloadDestination, zipDestination } = options
+  const { downloadDestination, installationDir } = options
 
   debug('unzipping from %s', downloadDestination)
-  debug('into %s', zipDestination)
+  debug('into', installationDir)
 
   if (!downloadDestination) {
     throw new Error('Missing zip filename')
   }
 
-  return new Promise((resolve, reject) => {
-    return yauzl.open(downloadDestination, (err, zipFile) => {
-      if (err) return reject(err)
+  return fs.ensureDirAsync(installationDir)
+  .then(() => {
+    return new Promise((resolve, reject) => {
+      return yauzl.open(downloadDestination, (err, zipFile) => {
+        if (err) return reject(err)
 
-      const total = zipFile.entryCount
+        const total = zipFile.entryCount
 
-      debug('zipFile entries count', total)
+        debug('zipFile entries count', total)
 
-      const started = new Date()
+        const started = new Date()
 
-      let percent = 0
-      let count = 0
+        let percent = 0
+        let count = 0
 
-      const notify = (percent) => {
-        const elapsed = new Date() - started
+        const notify = (percent) => {
+          const elapsed = new Date() - started
 
-        const eta = util.calculateEta(percent, elapsed)
+          const eta = util.calculateEta(percent, elapsed)
 
-        options.onProgress(percent, util.secsRemaining(eta))
-      }
-
-      const tick = () => {
-        count += 1
-
-        percent = ((count / total) * 100).toFixed(0)
-
-        return notify(percent)
-      }
-
-      const unzipWithNode = () => {
-        const endFn = (err) => {
-          if (err) { return reject(err) }
-
-          return resolve()
+          options.onProgress(percent, util.secsRemaining(eta))
         }
 
-        const obj = {
-          dir: zipDestination,
-          onEntry: tick,
+        const tick = () => {
+          count += 1
+
+          percent = ((count / total) * 100).toFixed(0)
+
+          return notify(percent)
         }
 
-        return extract(downloadDestination, obj, endFn)
-      }
-
-      //# we attempt to first unzip with the native osx
-      //# ditto because its less likely to have problems
-      //# with corruption, symlinks, or icons causing failures
-      //# and can handle resource forks
-      //# http://automatica.com.au/2011/02/unzip-mac-os-x-zip-in-terminal/
-      const unzipWithOsx = () => {
-        const copyingFileRe = /^copying file/
-
-        const sp = cp.spawn('ditto', ['-xkV', downloadDestination, zipDestination])
-        sp.on('error', () =>
-          // f-it just unzip with node
-          unzipWithNode()
-        )
-
-        sp.on('close', (code) => {
-          if (code === 0) {
-            // make sure we get to 100% on the progress bar
-            // because reading in lines is not really accurate
-            percent = 100
-            notify(percent)
+        const unzipWithNode = () => {
+          const endFn = (err) => {
+            if (err) { return reject(err) }
 
             return resolve()
           }
 
-          return unzipWithNode()
-        })
-
-        return readline.createInterface({
-          input: sp.stderr,
-        })
-        .on('line', (line) => {
-          if (copyingFileRe.test(line)) {
-            return tick()
+          const obj = {
+            dir: installationDir,
+            onEntry: tick,
           }
-        })
-      }
 
-      switch (os.platform()) {
-        case 'darwin':
-          return unzipWithOsx()
-        case 'linux':
-        case 'win32':
-          return unzipWithNode()
-        default:
-          return
-      }
+          return extract(downloadDestination, obj, endFn)
+        }
+
+        //# we attempt to first unzip with the native osx
+        //# ditto because its less likely to have problems
+        //# with corruption, symlinks, or icons causing failures
+        //# and can handle resource forks
+        //# http://automatica.com.au/2011/02/unzip-mac-os-x-zip-in-terminal/
+        const unzipWithOsx = () => {
+          const copyingFileRe = /^copying file/
+
+          const sp = cp.spawn('ditto', ['-xkV', downloadDestination, installationDir])
+          sp.on('error', () =>
+          // f-it just unzip with node
+            unzipWithNode()
+          )
+
+          sp.on('close', (code) => {
+            if (code === 0) {
+            // make sure we get to 100% on the progress bar
+            // because reading in lines is not really accurate
+              percent = 100
+              notify(percent)
+
+              return resolve()
+            }
+
+            return unzipWithNode()
+          })
+
+          return readline.createInterface({
+            input: sp.stderr,
+          })
+          .on('line', (line) => {
+            if (copyingFileRe.test(line)) {
+              return tick()
+            }
+          })
+        }
+
+        switch (os.platform()) {
+          case 'darwin':
+            return unzipWithOsx()
+          case 'linux':
+          case 'win32':
+            return unzipWithNode()
+          default:
+            return
+        }
+      })
     })
   })
 }
 
 const start = (options = {}) => {
-  const dir = info.getPathToUserExecutableDir()
+  const dir = state.getPathToExecutableDir(options.installationDir)
 
   debug('removing existing unzipped directory', dir)
 

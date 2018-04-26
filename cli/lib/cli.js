@@ -14,7 +14,7 @@ const parseOpts = (opts) => {
     'project', 'spec', 'reporter', 'reporterOptions', 'path', 'destination',
     'port', 'env', 'cypressVersion', 'config', 'record', 'key',
     'browser', 'detached', 'headed',
-    'group', 'groupId', 'global', 'dev')
+    'group', 'groupId', 'global', 'dev', 'force')
 
   debug('parsed cli options', opts)
 
@@ -142,10 +142,12 @@ module.exports = {
 
     program
     .command('install')
+    .usage('[options]')
     .description('Installs the Cypress executable matching this package\'s version')
-    .action(() => {
+    .option('-f, --force', 'force install the Cypress binary')
+    .action((opts) => {
       require('./tasks/install')
-      .start({ force: true })
+      .start(parseOpts(opts))
       .catch(util.logErrorExit1)
     })
 

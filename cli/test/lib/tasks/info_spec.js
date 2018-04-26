@@ -2,42 +2,53 @@ require('../../spec_helper')
 
 const os = require('os')
 const path = require('path')
+// const Promise = require('bluebird')
 
 const fs = require(`${lib}/fs`)
 const logger = require(`${lib}/logger`)
-const info = require(`${lib}/tasks/info`)
+const state = require(`${lib}/tasks/state`)
 
-const installationDir = info.getInstallationDir()
-const infoFilePath = info.getInfoFilePath()
+let installationDir // = state.getInstallationDir()
+let cliStatePath // = state.getInfoFilePath()
 
 describe('info', function () {
+
   beforeEach(function () {
     logger.reset()
-
     this.sandbox.stub(process, 'exit')
-    this.ensureEmptyInstallationDir = () => {
-      return fs.removeAsync(installationDir)
-      .then(() => {
-        return info.ensureInstallationDir()
-      })
-    }
+
+    return state.getCliStatePath()
+    .tap((path) => cliStatePath = path)
+    .then(fs.removeAsync)
+    .then(() => state.getBinaryDirectory())
+    .tap((binaryDir) => installationDir = binaryDir)
+    .then(fs.removeAsync)
+
+
+    // this.ensureEmptyInstallationDir = () => {
+    //   return fs.removeAsync(installationDir)
+    //   .then(() => {
+    //     return state.ensureBinaryDirectory()
+    //   })
+    // }
   })
 
   afterEach(function () {
     return fs.removeAsync(installationDir)
+    .then(fs.ensureDirAsync(installationDir))
   })
 
-  context('.clearVersionState', function () {
-    it('wipes out version info in info.json', function () {
-      return fs.outputJsonAsync(infoFilePath, { version: '5', verifiedVersion: '5', other: 'info' })
+  context('.clearCliState', function () {
+    it('wipes out version info in cli_state.json', function () {
+      return fs.outputJsonAsync(cliStatePath, { version: '5', install_directory: '/path/to/binary' })
       .then(() => {
-        return info.clearVersionState()
+        return state.clearCliState()
       })
       .then(() => {
-        return fs.readJsonAsync(infoFilePath)
+        return fs.pathExistsAsync(cliStatePath)
       })
-      .then((contents) => {
-        expect(contents).to.eql({ other: 'info' })
+      .then((stateExists) => {
+        expect(stateExists).to.eql(false)
       })
     })
   })
@@ -48,7 +59,7 @@ describe('info', function () {
     })
 
     it('ensures directory exists', function () {
-      return info.ensureInstallationDir().then(() => {
+      return state.ensureInstallationDir().then(() => {
         return fs.statAsync(installationDir)
       })
     })
@@ -56,7 +67,7 @@ describe('info', function () {
 
   context('.getInstallationDir', function () {
     it('resolves path to installation directory', function () {
-      expect(info.getInstallationDir()).to.equal(installationDir)
+      expect(state.getInstallationDir()).to.equal(installationDir)
     })
   })
 
@@ -66,9 +77,9 @@ describe('info', function () {
     })
 
     it('resolves version from version file when it exists', function () {
-      return info.writeInstalledVersion('2.0.48')
+      return state.writeInstalledVersion('2.0.48')
       .then(() => {
-        return info.getInstalledVersion()
+        return state.getInstalledVersion()
       })
       .then((version) => {
         expect(version).to.equal('2.0.48')
@@ -76,7 +87,7 @@ describe('info', function () {
     })
 
     it('throws when version file does not exist', function () {
-      return info.getInstalledVersion()
+      return state.getInstalledVersion()
       .catch(() => {})
     })
   })
@@ -84,29 +95,29 @@ describe('info', function () {
   context('.getPathToExecutable', function () {
     it('resolves path on windows', function () {
       this.sandbox.stub(os, 'platform').returns('win32')
-      expect(info.getPathToExecutable()).to.endWith('.exe')
+      expect(state.getPathToExecutable()).to.endWith('.exe')
     })
   })
 
   context('.getPathToUserExecutableDir', function () {
     it('resolves path on macOS', function () {
       this.sandbox.stub(os, 'platform').returns('darwin')
-      expect(info.getPathToUserExecutableDir()).to.equal(path.join(installationDir, 'Cypress.app'))
+      expect(state.getPathToUserExecutableDir()).to.equal(path.join(installationDir, 'Cypress.app'))
     })
 
     it('resolves path on linux', function () {
       this.sandbox.stub(os, 'platform').returns('linux')
-      expect(info.getPathToUserExecutableDir()).to.equal(path.join(installationDir, 'Cypress'))
+      expect(state.getPathToUserExecutableDir()).to.equal(path.join(installationDir, 'Cypress'))
     })
 
     it('resolves path on windows', function () {
       this.sandbox.stub(os, 'platform').returns('win32')
-      expect(info.getPathToUserExecutableDir()).to.endWith('Cypress')
+      expect(state.getPathToUserExecutableDir()).to.endWith('Cypress')
     })
 
     it('rejects on anything else', function () {
       this.sandbox.stub(os, 'platform').returns('unknown')
-      expect(() => info.getPathToUserExecutableDir()).to.throw('Platform: "unknown" is not supported.')
+      expect(() => state.getPathToUserExecutableDir()).to.throw('Platform: "unknown" is not supported.')
     })
   })
 
@@ -116,9 +127,9 @@ describe('info', function () {
     })
 
     it('writes the version to the version file', function () {
-      return info.writeInstalledVersion('the version')
+      return state.writeInstalledVersion('the version')
       .then(() => {
-        return fs.readJsonAsync(infoFilePath).get('version')
+        return fs.readJsonAsync(cliStatePath).get('version')
       })
       .then((version) => {
         expect(version).to.equal('the version')

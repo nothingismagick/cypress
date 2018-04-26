@@ -1,8 +1,8 @@
 const util = require('../util')
-const info = require('../tasks/info')
+const state = require('../tasks/state')
 
 const getVersions = () => {
-  return info.getInstalledVersion()
+  return state.getInstalledVersion()
   .then((binary) => {
     return {
       package: util.pkgVersion(),

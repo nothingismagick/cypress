@@ -9,7 +9,7 @@ const stdout = require('../../support/stdout')
 const fs = require(`${lib}/fs`)
 const download = require(`${lib}/tasks/download`)
 const install = require(`${lib}/tasks/install`)
-const info = require(`${lib}/tasks/info`)
+const state = require(`${lib}/tasks/state`)
 const unzip = require(`${lib}/tasks/unzip`)
 const logger = require(`${lib}/logger`)
 const util = require(`${lib}/util`)
@@ -49,10 +49,10 @@ describe('install', function () {
       this.sandbox.stub(unzip, 'start').resolves()
       this.sandbox.stub(Promise, 'delay').resolves()
       this.sandbox.stub(fs, 'removeAsync').resolves()
-      this.sandbox.stub(info, 'getPathToUserExecutableDir').returns('/path/to/binary/dir/')
-      this.sandbox.stub(info, 'getInstalledVersion').resolves()
-      this.sandbox.stub(info, 'writeInstalledVersion').resolves()
-      this.sandbox.stub(info, 'clearVersionState').resolves()
+      this.sandbox.stub(state, 'getPathToUserExecutableDir').returns('/path/to/binary/dir/')
+      this.sandbox.stub(state, 'getInstalledVersion').resolves()
+      this.sandbox.stub(state, 'writeInstalledVersion').resolves()
+      this.sandbox.stub(state, 'clearCliState').resolves()
     })
 
     describe('skips install', function () {
@@ -110,17 +110,17 @@ describe('install', function () {
         .then(() => {
           expect(unzip.start).calledWith({
             zipDestination: version,
-            destination: info.getInstallationDir(),
-            executable: info.getPathToUserExecutableDir(),
+            destination: state.getInstallationDir(),
+            executable: state.getPathToExecutableDir(),
           })
-          expect(info.writeInstalledVersion).calledWith('unknown')
+          expect(state.writeInstalledVersion).calledWith('unknown')
         })
       })
     })
 
     describe('when version is already installed', function () {
       beforeEach(function () {
-        info.getInstalledVersion.resolves(packageVersion)
+        state.getInstalledVersion.resolves(packageVersion)
 
         return install.start()
       })
@@ -137,7 +137,7 @@ describe('install', function () {
 
     describe('when getting installed version fails', function () {
       beforeEach(function () {
-        info.getInstalledVersion.rejects(new Error('no'))
+        state.getInstalledVersion.rejects(new Error('no'))
 
         return install.start()
       })
@@ -160,13 +160,13 @@ describe('install', function () {
 
     describe('when there is no install version', function () {
       beforeEach(function () {
-        info.getInstalledVersion.resolves(null)
+        state.getInstalledVersion.resolves(null)
 
         return install.start()
       })
 
       it('logs message and starts download', function () {
-        expect(info.clearVersionState).to.be.called
+        expect(state.clearCliState).to.be.called
 
         expect(download.start).to.be.calledWithMatch({
           version: packageVersion,
@@ -190,7 +190,7 @@ describe('install', function () {
 
     describe('when getting installed version does not match needed version', function () {
       beforeEach(function () {
-        info.getInstalledVersion.resolves('x.x.x')
+        state.getInstalledVersion.resolves('x.x.x')
 
         return install.start()
       })
@@ -213,13 +213,13 @@ describe('install', function () {
 
     describe('with force: true', function () {
       beforeEach(function () {
-        info.getInstalledVersion.resolves(packageVersion)
+        state.getInstalledVersion.resolves(packageVersion)
 
         return install.start({ force: true })
       })
 
       it('logs message and starts download', function () {
-        expect(info.clearVersionState).to.be.called
+        expect(state.clearCliState).to.be.called
 
         expect(download.start).to.be.calledWithMatch({
           version: packageVersion,
@@ -240,7 +240,7 @@ describe('install', function () {
       beforeEach(function () {
         this.sandbox.stub(util, 'isInstalledGlobally').returns(true)
 
-        info.getInstalledVersion.resolves('x.x.x')
+        state.getInstalledVersion.resolves('x.x.x')
 
         return install.start()
       })
@@ -265,7 +265,7 @@ describe('install', function () {
       beforeEach(function () {
         util.isCi.returns(true)
 
-        info.getInstalledVersion.resolves('x.x.x')
+        state.getInstalledVersion.resolves('x.x.x')
 
         return install.start()
       })

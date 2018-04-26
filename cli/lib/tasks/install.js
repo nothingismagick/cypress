@@ -9,7 +9,7 @@ const Promise = require('bluebird')
 const fs = require('../fs')
 const download = require('./download')
 const util = require('../util')
-const info = require('./info')
+const state = require('./state')
 const unzip = require('./unzip')
 const logger = require('../logger')
 const la = require('lazy-ass')
@@ -61,9 +61,11 @@ const displayCompletionMsg = () => {
   )
 }
 
-const downloadAndUnzip = (version) => {
-  const options = {
+const downloadAndUnzip = ({ version, installationDir, downloadDir }) => {
+  let options = {
     version,
+    installationDir,
+    downloadDir,
   }
 
   // let the user know what version of cypress we're downloading!
@@ -102,9 +104,10 @@ const downloadAndUnzip = (version) => {
         options.onProgress = progessify(task, 'Downloading Cypress')
 
         return download.start(options)
-        .then(({ filename, downloaded }) => {
+        .then(({ downloadDestination, downloaded }) => {
           // save the download destination for unzipping
-          ctx.downloadDestination = filename
+          debug(`finished downloading file: ${downloadDestination}`)
+          options.downloadDestination = downloadDestination
           ctx.downloaded = downloaded
 
           util.setTaskTitle(
@@ -119,7 +122,6 @@ const downloadAndUnzip = (version) => {
       title: util.titleize('Unzipping Cypress'),
       task: (ctx, task) => {
         // as our unzip progresses indicate the status
-        options.downloadDestination = ctx.downloadDestination
         options.onProgress = progessify(task, 'Unzipping Cypress')
 
         return unzip.start(options)
@@ -135,24 +137,23 @@ const downloadAndUnzip = (version) => {
     {
       title: util.titleize('Finishing Installation'),
       task: (ctx, task) => {
-        const { downloadDestination, version } = options
-        la(is.unemptyString(downloadDestination), 'missing download destination', options)
+        const { downloadDestination, downloadDir } = options
+        la(is.unemptyString(downloadDir), 'missing download destination', options)
         la(is.bool(ctx.downloaded), 'missing downloaded flag', ctx)
 
-        const removeFile = () => {
-          debug('removing zip file %s', downloadDestination)
-          return fs.removeAsync(downloadDestination)
-        }
-        const skipFileRemoval = () => {
+        const cleanup = () => {
+          if (ctx.downloaded) {
+            debug('removing zip file %s', downloadDestination)
+            return fs.removeAsync(downloadDestination)
+          }
           debug('not removing file %s', downloadDestination)
           debug('because it was not downloaded (probably was local file already)')
           return Promise.resolve()
         }
-        const cleanup = ctx.downloaded ? removeFile : skipFileRemoval
 
         return cleanup()
         .then(() => {
-          const dir = info.getPathToUserExecutableDir()
+          const dir = state.getPathToExecutableDir(installationDir)
           debug('finished installation in', dir)
 
           util.setTaskTitle(
@@ -160,15 +161,13 @@ const downloadAndUnzip = (version) => {
             util.titleize(chalk.green('Finished Installation'), chalk.gray(dir)),
             rendererOptions.renderer
           )
-
-          return info.writeInstalledVersion(version)
         })
       },
     },
   ], rendererOptions)
 
   // start the tasks!
-  return tasks.run()
+  return Promise.resolve(tasks.run())
 }
 
 const start = (options = {}) => {
@@ -186,6 +185,7 @@ const start = (options = {}) => {
   })
 
   let needVersion = util.pkgVersion()
+  debug('version in package.json is', needVersion)
 
   // let this env var reset the binary version we need
   if (process.env.CYPRESS_BINARY_VERSION) {
@@ -213,13 +213,19 @@ const start = (options = {}) => {
     }
   }
 
-  return info.getInstalledVersion()
-  .catchReturn(null)
+  return state.getInstalledVersion()
   .then((installedVersion) => {
+
+    if (!installedVersion) {
+      debug('no version in cli state')
+      return true
+    }
+
     debug('installed version is', installedVersion, 'version needed is', needVersion)
 
     if (options.force) {
-      return info.clearVersionState()
+      return state.clearCliState()
+      .thenReturn(true)
     }
 
     if (installedVersion === needVersion) {
@@ -229,44 +235,76 @@ const start = (options = {}) => {
       return false
     }
 
-    if (!installedVersion) {
-      return info.clearVersionState()
-    }
-
     logger.warn(stripIndent`
       Installed version ${chalk.cyan(`(${installedVersion})`)} does not match needed version ${chalk.cyan(`(${needVersion})`)}.
     `)
 
     logger.log()
+
+    return true
   })
-  .then((ret) => {
+  .then((shouldInstall) => {
     // noop if we've been told not to download
-    if (ret === false) {
+    if (!shouldInstall) {
+      debug('Not downloading or installing binary')
       return
     }
 
-    // TODO: what to do about this? let's just not support it
-    // let needVersion be a path to a real cypress binary
-    // instead of a version we download from the internet
-    return fs.statAsync(needVersion)
-    .then(() => {
-      logger.log('Installing local Cypress binary from %s', needVersion)
-
-      // TODO: move all this shit, it doesn't work as is now anyway
-      return unzip.start({
-        zipDestination: needVersion,
-        destination: info.getInstallationDir(),
-        executable: info.getPathToUserExecutableDir(),
+    // see if version supplied is a path to a binary
+    return fs.pathExistsAsync(needVersion)
+    .then((exists) => {
+      if (exists) {
+        debug('found local file right away', needVersion)
+        return needVersion
+      }
+      const possibleFile = util.formAbsolutePath(needVersion)
+      debug('checking local file', possibleFile, 'cwd', process.cwd())
+      return fs.pathExistsAsync(possibleFile).then((exists) => {
+        if (exists) {
+          debug('found local file', possibleFile)
+          debug('skipping download')
+          return possibleFile
+        } else {
+          // not a file path
+          return false
+        }
       })
-      .then(() => info.writeInstalledVersion('unknown'))
     })
-    .catch(() => {
-      debug('preparing to download and unzip version', needVersion)
+    .then((isLocalFile) => {
+      if (isLocalFile) {
+        debug('Found local file at', needVersion)
+        return state.writeInstallDirectory(isLocalFile)
+        .then(() => state.writeInstalledVersion(needVersion))
+        .thenReturn(false)
+      }
 
-      return downloadAndUnzip(needVersion)
-      .then(() => {
+      return state.getBinaryDirectory(needVersion)
+      .then((installationDir) => {
+        return fs.pathExistsAsync(path.join(installationDir, 'binary_state.json'))
+        .then((exists) => ({ installationDir, alreadyInstalled: exists }))
+      })
+      .then(({ installationDir, alreadyInstalled }) => {
+        if (alreadyInstalled) {
+          debug('Cypress already installed at', installationDir)
+          if (options.force) {
+            debug('...but installation was forced')
+          } else {
+            debug('Skipping installation')
+            return installationDir
+          }
+        }
+
+        debug('preparing to download and unzip version ', needVersion, 'to path', installationDir)
+
+        const downloadDir = state.getDistDirectory()
+        return downloadAndUnzip({ version: needVersion, installationDir, downloadDir })
+        .thenReturn(installationDir)
+      })
+      .then((installationDir) => {
+        return state.writeInstallDirectory(installationDir)
+        .then(() => state.writeInstalledVersion(needVersion))
         // wait 1 second for a good user experience
-        return Promise.delay(1000)
+        .thenReturn(Promise.delay(1000))
       })
       .then(displayCompletionMsg)
     })

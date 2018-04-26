@@ -12,7 +12,6 @@ const is = require('check-more-types')
 const { throwFormErrorText, errors } = require('../errors')
 const fs = require('../fs')
 const util = require('../util')
-const info = require('./info')
 
 const baseUrl = 'https://download.cypress.io/'
 
@@ -44,17 +43,6 @@ const prettyDownloadErr = (err, version) => {
   debug(msg)
 
   return throwFormErrorText(errors.failedDownload)(msg)
-}
-
-// attention:
-// when passing relative path to NPM post install hook, the current working
-// directory is set to the `node_modules/cypress` folder
-// the user is probably passing relative path with respect to root package folder
-function formAbsolutePath (filename) {
-  if (path.isAbsolute(filename)) {
-    return filename
-  }
-  return path.join(process.cwd(), '..', '..', filename)
 }
 
 // downloads from given url
@@ -126,7 +114,7 @@ const downloadFromUrl = (options) => {
       debug('downloading finished')
 
       resolve({
-        filename: options.downloadDestination,
+        downloadDestination: options.downloadDestination,
         downloaded: true,
       })
     })
@@ -137,38 +125,10 @@ const downloadFromUrl = (options) => {
 // and a flag if the file was really downloaded
 // or not. Maybe it was already there!
 // {filename: ..., downloaded: true|false}
-const download = (options = {}) => {
-  if (!options.version) {
-    debug('empty Cypress version to download, will try latest')
-    return downloadFromUrl(options)
-  }
+const download = (options) => {
 
-  debug('need to download Cypress version %s', options.version)
-  // first check the original filename
-  return fs.pathExists(options.version).then((exists) => {
-    if (exists) {
-      debug('found file right away', options.version)
-      return {
-        filename: options.version,
-        downloaded: false,
-      }
-    }
-
-    const possibleFile = formAbsolutePath(options.version)
-    debug('checking local file', possibleFile, 'cwd', process.cwd())
-    return fs.pathExists(possibleFile).then((exists) => {
-      if (exists) {
-        debug('found local file', possibleFile)
-        debug('skipping download')
-        return {
-          filename: possibleFile,
-          downloaded: false,
-        }
-      } else {
-        return downloadFromUrl(options)
-      }
-    })
-  })
+  debug('needed Cypress version: %s', options.version)
+  return downloadFromUrl(options)
 }
 
 const start = (options) => {
@@ -176,12 +136,12 @@ const start = (options) => {
     version: null,
     throttle: 100,
     onProgress: () => {},
-    downloadDestination: path.join(info.getInstallationDir(), 'cypress.zip'),
+    downloadDestination: path.join(options.downloadDir, 'cypress.zip'),
   })
+  debug(`downloading cypress.zip to "${options.downloadDestination}"`)
 
-  // make sure our 'dist' installation dir exists
-  return info
-  .ensureInstallationDir()
+  // ensure download dir exists
+  return fs.ensureDirAsync(options.downloadDir)
   .then(() => {
     return download(options)
   })
