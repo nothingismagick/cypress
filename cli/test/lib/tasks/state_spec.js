@@ -8,6 +8,7 @@ const fs = require(`${lib}/fs`)
 const logger = require(`${lib}/logger`)
 const state = require(`${lib}/tasks/state`)
 
+
 let installationDir // = state.getInstallationDir()
 let cliStatePath // = state.getInfoFilePath()
 
