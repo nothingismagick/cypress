@@ -30,6 +30,7 @@ exitErr = (err) ->
   ## and potentially raygun
   ## and exit with 1
   debug('exiting with err', err)
+
   require("./errors").log(err)
   .then -> exit(1)
 
@@ -107,7 +108,7 @@ module.exports = {
     #   require("opn")("http://127.0.0.1:8080/debug?ws=127.0.0.1:8080&port=5858")
 
   start: (argv = []) ->
-    require("./logger").info("starting desktop app", args: argv)
+    debug("starting cypress with argv %o", argv)
 
     ## make sure we have the appData folder
     require("./util/app_data").ensure()
@@ -141,10 +142,6 @@ module.exports = {
 
         when options.exitWithCode?
           options.mode = "exitWithCode"
-
-        ## enable old CLI tools to record
-        when options.record or options.ci
-          options.mode = "record"
 
         when options.runProject
           ## go into headless mode when running
@@ -201,7 +198,7 @@ module.exports = {
 
       when "getKey"
         ## print the key + exit
-        require("./project").getSecretKeyByPath(options.projectPath)
+        require("./project").getSecretKeyByPath(options.projectRoot)
         .then (key) ->
           console.log(key)
         .then(exit0)
@@ -209,7 +206,7 @@ module.exports = {
 
       when "generateKey"
         ## generate + print the key + exit
-        require("./project").generateSecretKeyByPath(options.projectPath)
+        require("./project").generateSecretKeyByPath(options.projectRoot)
         .then (key) ->
           console.log(key)
         .then(exit0)
@@ -230,13 +227,6 @@ module.exports = {
 
       when "interactive"
         @runElectron(mode, options)
-
-      when "record"
-        ## run headlessly, record, and exit
-        @runElectron(mode, options)
-        .get("totalFailures")
-        .then(exit)
-        .catch(exitErr)
 
       when "server"
         @runServer(options)
